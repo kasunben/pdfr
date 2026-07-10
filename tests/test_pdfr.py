@@ -168,6 +168,24 @@ def test_find_text_matches_filters_invalid_credit_card_by_luhn():
 # find_pdfs
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# _read_pattern_file
+# ---------------------------------------------------------------------------
+
+def test_read_pattern_file_skips_blank_lines_and_comments(tmp_path):
+    path = tmp_path / "terms.txt"
+    path.write_text(
+        "Acme Corp\n"
+        "\n"
+        "# a comment\n"
+        "  Jane Doe  \n"
+        "   \n"
+        "PROJ-4821\n"
+    )
+
+    assert list(pdfr._read_pattern_file(path)) == ["Acme Corp", "Jane Doe", "PROJ-4821"]
+
+
 def test_find_pdfs_recurses_and_sorts(tmp_path):
     (tmp_path / "b").mkdir()
     (tmp_path / "a").mkdir()
@@ -351,6 +369,45 @@ def test_main_dry_run_end_to_end(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "would redact 1 item(s)" in out
     assert "Dry run only" in out
+
+
+def test_main_redacts_terms_from_file(tmp_path, capsys):
+    _make_pdf(tmp_path / "in.pdf", ["Client: Acme Corp", "Owner: Jane Doe"])
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("Acme Corp\n# a comment\nJane Doe\n")
+
+    pdfr.main([
+        "-r", str(tmp_path), "--dry-run", "--types", "",
+        "--custom-term-file", str(terms_file),
+    ])
+
+    out = capsys.readouterr().out
+    assert "would redact 2 item(s)" in out
+
+
+def test_main_combines_cli_and_file_custom_patterns(tmp_path, capsys):
+    _make_pdf(tmp_path / "in.pdf", ["Client: Acme Corp", "Ref: PROJ-4821"])
+    regex_file = tmp_path / "patterns.txt"
+    regex_file.write_text(r"PROJ-\d{4}" + "\n")
+
+    pdfr.main([
+        "-r", str(tmp_path), "--dry-run", "--types", "",
+        "--custom-term", "Acme Corp",
+        "--custom-regex-file", str(regex_file),
+    ])
+
+    out = capsys.readouterr().out
+    assert "would redact 2 item(s)" in out
+
+
+def test_main_errors_when_term_file_missing(tmp_path):
+    (tmp_path / "in.pdf").write_bytes(b"")
+    with pytest.raises(SystemExit) as exc:
+        pdfr.main([
+            "-r", str(tmp_path), "--types", "",
+            "--custom-term-file", str(tmp_path / "missing.txt"),
+        ])
+    assert "is not a file" in str(exc.value)
 
 
 @requires_phonenumbers

@@ -58,6 +58,24 @@ Redact your own custom patterns, in addition to the built-ins:
 pdfr -r ./docs --custom-term "Acme Corp" --custom-regex "PROJ-\d{4}"
 ```
 
+For more than a couple of terms, put them in a file instead — one
+term (or regex) per line, blank lines and `#` comments ignored:
+
+```
+# terms.txt
+Acme Corp
+Jane Doe
+Project Nightingale
+```
+
+```bash
+pdfr -r ./docs --custom-term-file terms.txt
+pdfr -r ./docs --custom-regex-file patterns.txt
+```
+
+`--custom-term-file`/`--custom-regex-file` are repeatable and combine
+freely with `--custom-term`/`--custom-regex` — use both if you like.
+
 Skip QR/barcode scanning (faster, if you know you don't need it):
 
 ```bash
@@ -84,8 +102,8 @@ pdfr -r ./docs --phone-region GB
 | BIC / SWIFT   | Structural pattern (8 or 11 chars) — see limitation below              |
 | QR code       | Any QR code on the page, regardless of encoded content                |
 | Barcode       | Any 1D barcode on the page, regardless of encoded content              |
-| Custom regex  | Any pattern you supply via `--custom-regex` (repeatable)               |
-| Custom term   | Any literal text you supply via `--custom-term`, case-insensitive (repeatable) |
+| Custom regex  | Any pattern you supply via `--custom-regex` or `--custom-regex-file` (repeatable) |
+| Custom term   | Any literal text you supply via `--custom-term` or `--custom-term-file`, case-insensitive (repeatable) |
 
 **Coming later (not implemented yet):** links/URLs, timestamps, dates
 in various formats.

@@ -25,6 +25,9 @@ Usage:
     pdfr -r ./docs --types email,ssn      # limit to specific PII types
     pdfr -r ./docs --custom-term "Acme Corp"
     pdfr -r ./docs --custom-regex "PROJ-\\d{4}"
+    pdfr -r ./docs --custom-term-file terms.txt    # one literal term per
+                                                    # line (see below)
+    pdfr -r ./docs --custom-regex-file patterns.txt  # one regex per line
     pdfr -r ./docs --no-codes             # skip QR/barcode scanning (faster)
     pdfr -r ./docs --phone-region GB      # interpret undialed-code numbers
                                            # as GB numbers (default: US)
@@ -35,6 +38,11 @@ country code (e.g. "+44 20 7946 0958") are recognized regardless of
 --phone-region, and numbers written in national format are interpreted
 using --phone-region as the assumed country. Without 'phonenumbers'
 installed, phone detection falls back to a US-only pattern.
+
+--custom-term-file / --custom-regex-file take a plain text file, one
+term/pattern per line. Blank lines and lines starting with '#' are
+ignored. Both are repeatable and can be combined freely with
+--custom-term / --custom-regex.
 """
 
 import argparse
@@ -275,6 +283,19 @@ def find_pdfs(root: Path):
     return sorted(root.rglob("*.pdf"))
 
 
+def _read_pattern_file(path: Path):
+    """Yield stripped, non-empty lines from a terms/patterns file, one
+    entry per line. Lines starting with '#' are treated as comments."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as e:
+        sys.exit(f"Error: couldn't read {path}: {e}")
+    for line in raw.splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            yield line
+
+
 def _mask(value: str) -> str:
     if len(value) <= 4:
         return "*" * len(value)
@@ -326,6 +347,24 @@ def build_parser():
         metavar="TEXT",
         help="Exact (case-insensitive) text to redact wherever it appears, "
              "in addition to built-in types. Repeatable.",
+    )
+    parser.add_argument(
+        "--custom-regex-file",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="File of custom regex patterns to redact, one per line. Blank "
+             "lines and lines starting with '#' are ignored. Repeatable, "
+             "and combinable with --custom-regex.",
+    )
+    parser.add_argument(
+        "--custom-term-file",
+        action="append",
+        default=[],
+        metavar="FILE",
+        help="File of exact (case-insensitive) terms to redact, one per "
+             "line. Blank lines and lines starting with '#' are ignored. "
+             "Repeatable, and combinable with --custom-term.",
     )
     parser.add_argument(
         "--phone-region",
@@ -391,16 +430,34 @@ def main(argv=None):
                 "Expected an ISO 3166-1 alpha-2 code, e.g. US, GB, DE."
             )
 
-    custom_patterns = []
-    for i, pattern_str in enumerate(args.custom_regex):
+    def _compile_regex(pattern_str, i, source):
         try:
-            custom_patterns.append((f"custom_regex_{i+1}", re.compile(pattern_str)))
+            return (f"custom_regex_{i}", re.compile(pattern_str))
         except re.error as e:
-            sys.exit(f"Error: invalid --custom-regex '{pattern_str}': {e}")
-    for i, term in enumerate(args.custom_term):
-        custom_patterns.append(
-            (f"custom_term_{i+1}", re.compile(re.escape(term), re.IGNORECASE))
-        )
+            sys.exit(f"Error: invalid regex '{pattern_str}' from {source}: {e}")
+
+    regex_strs = [(p, "--custom-regex") for p in args.custom_regex]
+    for file_str in args.custom_regex_file:
+        path = Path(file_str)
+        if not path.is_file():
+            sys.exit(f"Error: --custom-regex-file {path} is not a file")
+        regex_strs.extend((p, str(path)) for p in _read_pattern_file(path))
+
+    term_strs = [(t, "--custom-term") for t in args.custom_term]
+    for file_str in args.custom_term_file:
+        path = Path(file_str)
+        if not path.is_file():
+            sys.exit(f"Error: --custom-term-file {path} is not a file")
+        term_strs.extend((t, str(path)) for t in _read_pattern_file(path))
+
+    custom_patterns = [
+        _compile_regex(pattern_str, i, source)
+        for i, (pattern_str, source) in enumerate(regex_strs, start=1)
+    ]
+    custom_patterns.extend(
+        (f"custom_term_{i}", re.compile(re.escape(term), re.IGNORECASE))
+        for i, (term, _source) in enumerate(term_strs, start=1)
+    )
 
     out_dir = Path(args.out).resolve() if args.out else None
     in_place = out_dir is None
