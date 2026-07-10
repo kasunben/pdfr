@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# pdfr runtime artifacts
+*.pdfr_tmp
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Claude Code session/memory data
+.remember/
